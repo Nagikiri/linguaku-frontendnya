@@ -4,7 +4,10 @@
     "slug": "LinguaKu",
     "version": "1.0.0",
     "scheme": "linguaku",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -60,6 +63,11 @@
           ]
         }
       ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1a38d46e-a613-4542-91a5-955406111bb4"
+      }
     }
   }
 }
