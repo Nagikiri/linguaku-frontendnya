@@ -12,7 +12,13 @@ import {
   Platform,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import Voice from '@react-native-voice/voice';
+import {
+  useSpeechRecognitionEvent,
+  addSpeechRecognitionListener,
+  ExpoSpeechRecognitionModule,
+  AudioEncodingAndroid,
+  AudioSourceAndroid,
+} from "expo-speech-recognition";
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getToken } from '../../utils/storage';
@@ -47,43 +53,25 @@ export const PracticeScreen = ({ route, navigation }) => {
   const resultAnim = useRef(new Animated.Value(0)).current;
   const [wordAnimations, setWordAnimations] = useState([]);
 
-  // Initialize Voice
-  useEffect(() => {
-    // Set up voice recognition callbacks
-    Voice.onSpeechStart = onSpeechStart;
-    Voice.onSpeechEnd = onSpeechEnd;
-    Voice.onSpeechResults = onSpeechResults;
-    Voice.onSpeechError = onSpeechError;
-
-    return () => {
-      // Cleanup
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
-  }, []);
-
-  const onSpeechStart = (e) => {
-    console.log('Speech recognition started', e);
-  };
-
-  const onSpeechEnd = (e) => {
-    console.log('Speech recognition ended', e);
-    setIsRecording(false);
-  };
-
-  const onSpeechResults = (e) => {
-    console.log('Speech results:', e);
-    if (e.value && e.value.length > 0) {
-      const text = e.value[0];
-      setRecognizedText(text);
-      console.log('Recognized text:', text);
+  // Speech recognition event handler
+  useSpeechRecognitionEvent("result", (event) => {
+    const transcript = event.results[0]?.transcript;
+    if (transcript) {
+      setRecognizedText(transcript);
+      console.log('Recognized text:', transcript);
     }
-  };
+  });
 
-  const onSpeechError = (e) => {
-    console.error('Speech recognition error:', e);
+  useSpeechRecognitionEvent("end", () => {
+    setIsRecording(false);
+    console.log('Speech recognition ended');
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error('Speech recognition error:', event.error);
     setIsRecording(false);
     Alert.alert('Recognition Error', 'Failed to recognize speech. Please try again.');
-  };
+  });
 
   useEffect(() => {
     if (isRecording) {
@@ -137,7 +125,7 @@ export const PracticeScreen = ({ route, navigation }) => {
     }).start();
   };
 
-  // Record Functions - Updated to use Speech Recognition
+  // Record Functions - Updated to use Expo Speech Recognition
   const startRecording = async () => {
     try {
       setIsRecording(true);
@@ -145,9 +133,26 @@ export const PracticeScreen = ({ route, navigation }) => {
       setShowResult(false);
       setRecognizedText('');
 
-      // Start speech recognition
-      await Voice.start('en-US'); // English recognition
-      console.log('Voice recognition started');
+      // Request permissions and start speech recognition
+      const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission required', 'Please allow microphone access');
+        setIsRecording(false);
+        return;
+      }
+
+      // Start speech recognition with English language
+      await ExpoSpeechRecognitionModule.start({
+        lang: 'en-US',
+        interimResults: true,
+        maxAlternatives: 1,
+        continuous: false,
+        requiresOnDeviceRecognition: false,
+        addsPunctuation: false,
+        contextualStrings: [materialText], // Hint for better recognition
+      });
+      
+      console.log('Speech recognition started');
 
     } catch (err) {
       console.error('Failed to start speech recognition', err);
@@ -159,8 +164,8 @@ export const PracticeScreen = ({ route, navigation }) => {
   const stopRecording = async () => {
     try {
       setIsRecording(false);
-      await Voice.stop();
-      console.log('Voice recognition stopped');
+      await ExpoSpeechRecognitionModule.stop();
+      console.log('Speech recognition stopped');
     } catch (err) {
       console.error('Failed to stop speech recognition', err);
     }
