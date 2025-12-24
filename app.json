@@ -68,6 +68,10 @@
       "eas": {
         "projectId": "1a38d46e-a613-4542-91a5-955406111bb4"
       }
-    }
+    },
+    "plugins": [
+      "@react-native-voice/voice",
+      "expo-speech-recognition"
+    ]
   }
 }

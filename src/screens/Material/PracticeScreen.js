@@ -9,8 +9,10 @@ import {
   ScrollView,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Audio } from 'expo-av';
+import Voice from '@react-native-voice/voice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getToken } from '../../utils/storage';
@@ -33,18 +35,55 @@ export const PracticeScreen = ({ route, navigation }) => {
   // States
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [audioUri, setAudioUri] = useState(null);
+  const [recognizedText, setRecognizedText] = useState('');
   const [result, setResult] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [showResult, setShowResult] = useState(false);
-  const [sound, setSound] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [usingSpeechRecognition, setUsingSpeechRecognition] = useState(true); // Use speech recognition by default
 
   // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveAnim = useRef(new Animated.Value(0)).current;
   const resultAnim = useRef(new Animated.Value(0)).current;
   const [wordAnimations, setWordAnimations] = useState([]);
+
+  // Initialize Voice
+  useEffect(() => {
+    // Set up voice recognition callbacks
+    Voice.onSpeechStart = onSpeechStart;
+    Voice.onSpeechEnd = onSpeechEnd;
+    Voice.onSpeechResults = onSpeechResults;
+    Voice.onSpeechError = onSpeechError;
+
+    return () => {
+      // Cleanup
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, []);
+
+  const onSpeechStart = (e) => {
+    console.log('Speech recognition started', e);
+  };
+
+  const onSpeechEnd = (e) => {
+    console.log('Speech recognition ended', e);
+    setIsRecording(false);
+  };
+
+  const onSpeechResults = (e) => {
+    console.log('Speech results:', e);
+    if (e.value && e.value.length > 0) {
+      const text = e.value[0];
+      setRecognizedText(text);
+      console.log('Recognized text:', text);
+    }
+  };
+
+  const onSpeechError = (e) => {
+    console.error('Speech recognition error:', e);
+    setIsRecording(false);
+    Alert.alert('Recognition Error', 'Failed to recognize speech. Please try again.');
+  };
 
   useEffect(() => {
     if (isRecording) {
@@ -98,45 +137,32 @@ export const PracticeScreen = ({ route, navigation }) => {
     }).start();
   };
 
-  // Record Functions
+  // Record Functions - Updated to use Speech Recognition
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission required', 'Please allow microphone access');
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-
-      setRecording(newRecording);
       setIsRecording(true);
       setResult(null);
       setShowResult(false);
+      setRecognizedText('');
+
+      // Start speech recognition
+      await Voice.start('en-US'); // English recognition
+      console.log('Voice recognition started');
+
     } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording');
+      console.error('Failed to start speech recognition', err);
+      setIsRecording(false);
+      Alert.alert('Error', 'Failed to start speech recognition. Make sure you have internet connection.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
-
     try {
       setIsRecording(false);
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setAudioUri(uri);
-      setRecording(null);
+      await Voice.stop();
+      console.log('Voice recognition stopped');
     } catch (err) {
-      console.error('Failed to stop recording', err);
+      console.error('Failed to stop speech recognition', err);
     }
   };
 
@@ -183,10 +209,10 @@ export const PracticeScreen = ({ route, navigation }) => {
     };
   }, [sound]);
 
-  // Analyze Audio
+  // Analyze with Speech Recognition (No audio upload needed)
   const handleAnalyze = async (retryCount = 0) => {
-    if (!audioUri) {
-      Alert.alert('Error', 'Please record audio first');
+    if (!recognizedText || recognizedText.trim() === '') {
+      Alert.alert('Error', 'No speech recognized. Please try recording again.');
       return;
     }
 
@@ -203,16 +229,15 @@ export const PracticeScreen = ({ route, navigation }) => {
         return;
       }
 
-      const formData = new FormData();
-      formData.append('audio', {
-        uri: audioUri,
-        type: 'audio/m4a',
-        name: `recording_${Date.now()}.m4a`,
-      });
-      formData.append('materialId', material._id);
+      // Send recognized text to backend (no audio file needed)
+      const requestBody = {
+        recognizedText: recognizedText,
+        materialId: material._id
+      };
 
-      console.log('📤 Uploading audio to:', `${API_URL}/practice/analyze`);
+      console.log('📤 Sending recognized text to:', `${API_URL}/practice/analyze`);
       console.log('📝 Material ID:', material._id);
+      console.log('🗣️ Recognized Text:', recognizedText);
 
       // Create timeout promise
       const timeoutPromise = new Promise((_, reject) => 
@@ -225,13 +250,14 @@ export const PracticeScreen = ({ route, navigation }) => {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
           },
-          body: formData,
+          body: JSON.stringify(requestBody),
         }),
         timeoutPromise
       ]);
 
-      console.log('📡 Response status:', response.status);
+      console.log(' Response status:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -505,14 +531,22 @@ export const PracticeScreen = ({ route, navigation }) => {
           <Text style={styles.recordText}>
             {isRecording
               ? 'Tap to Stop Recording'
-              : audioUri
+              : recognizedText
               ? 'Tap to Record Again'
               : 'Tap to Start Recording'}
           </Text>
+
+          {/* Show recognized text */}
+          {recognizedText && !showResult && (
+            <View style={styles.recognizedTextContainer}>
+              <Text style={styles.recognizedLabel}>You said:</Text>
+              <Text style={styles.recognizedText}>"{recognizedText}"</Text>
+            </View>
+          )}
         </View>
 
         {/* Analyze Button */}
-        {audioUri && !showResult && (
+        {recognizedText && !showResult && (
           <TouchableOpacity
             style={[styles.analyzeButton, analyzing && styles.analyzeButtonDisabled]}
             onPress={handleAnalyze}
@@ -615,7 +649,7 @@ export const PracticeScreen = ({ route, navigation }) => {
               onPress={() => {
                 setResult(null);
                 setShowResult(false);
-                setAudioUri(null);
+                setRecognizedText('');
                 resultAnim.setValue(0);
               }}
             >
@@ -784,6 +818,28 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
   },
+  recognizedTextContainer: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    alignSelf: 'stretch',
+    marginHorizontal: 24,
+  },
+  recognizedLabel: {
+    fontSize: 14,
+    color: '#3B82F6',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  recognizedText: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
   analyzeButton: {
     borderRadius: 16,
     overflow: 'hidden',
@@ -941,5 +997,24 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: 'bold',
     color: '#6366F1',
+  },
+  recognizedTextContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  recognizedLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginBottom: 4,
+  },
+  recognizedText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E3A8A',
   },
 });
