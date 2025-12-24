@@ -39,6 +39,10 @@ web-build/
 *.ipa
 android/app/build/
 android/build/
+android/.gradle/
+android/local.properties
+android/.cxx/
+android/.externalNativeBuild/
 ios/build/
 ios/Pods/
 
