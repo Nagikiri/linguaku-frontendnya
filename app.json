@@ -38,6 +38,7 @@
       "package": "com.linguaku.app",
       "softwareKeyboardLayoutMode": "pan",
       "jsEngine": "hermes",
+      "kotlinVersion": "2.0.21",
       "permissions": [
         "RECORD_AUDIO",
         "WRITE_EXTERNAL_STORAGE",
@@ -70,7 +71,6 @@
       }
     },
     "plugins": [
-      "@react-native-voice/voice",
       "expo-speech-recognition"
     ]
   }
